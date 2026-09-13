@@ -47,6 +47,15 @@ if (!report_date) {
     );
 }
 
+if (
+    !Array.isArray(store_key_values) ||
+    store_key_values.length === 0
+) {
+    throw new Error(
+        'store_key_values must contain at least one configured store value.'
+    );
+}
+
 
 // =====================================================================
 // HELPER: Save screenshot to default Apify Key-Value Store
@@ -285,7 +294,15 @@ async function findReportFrame(
     );
 }
 
-function getStoreKey(storeValue, storeKeyValues) {
+
+// =====================================================================
+// HELPER: Match HME Store value against configured store_key_values
+// =====================================================================
+
+function getStoreKey(
+    storeValue,
+    storeKeyValues
+) {
     const storeUpper =
         String(storeValue)
             .toUpperCase();
@@ -310,38 +327,62 @@ function getStoreKey(storeValue, storeKeyValues) {
         .trim();
 }
 
+
 // =====================================================================
 // HELPER: Remove HME report metadata above actual RCD data
 // =====================================================================
 
-function cleanHmeRcdCsv(csvBuffer, log) {
+function cleanHmeRcdCsv(
+    csvBuffer,
+    log
+) {
 
-    // Convert downloaded CSV buffer to text
-    let csvText = csvBuffer.toString('utf8');
+    let csvText =
+        csvBuffer.toString('utf8');
 
     // Remove UTF-8 BOM if present
-    csvText = csvText.replace(/^\uFEFF/, '');
+    csvText =
+        csvText.replace(
+            /^\uFEFF/,
+            ''
+        );
 
-    // Support both Windows and Unix line endings
-    const lines = csvText.split(/\r?\n/);
+    const lines =
+        csvText.split(
+            /\r?\n/
+        );
 
-    // Find the actual RCD table header
-    const headerIndex = lines.findIndex(
-        line => {
-            const upper =
-                line.toUpperCase();
+    // Find actual Raw Car Data table header
+    const headerIndex =
+        lines.findIndex(
+            line => {
 
-            return (
-                upper.includes('DAYPART') &&
-                upper.includes('DEPARTURE_TIME') &&
-                upper.includes('EVENT_NAME') &&
-                upper.includes('EVENTTYPE') &&
-                upper.includes('AVGTIME')
-            );
-        }
-    );
+                const upper =
+                    line.toUpperCase();
 
-    if (headerIndex === -1) {
+                return (
+                    upper.includes(
+                        'DAYPART'
+                    ) &&
+                    upper.includes(
+                        'DEPARTURE_TIME'
+                    ) &&
+                    upper.includes(
+                        'EVENT_NAME'
+                    ) &&
+                    upper.includes(
+                        'EVENTTYPE'
+                    ) &&
+                    upper.includes(
+                        'AVGTIME'
+                    )
+                );
+            }
+        );
+
+    if (
+        headerIndex === -1
+    ) {
         throw new Error(
             'Could not locate the RCD data header in the downloaded CSV.'
         );
@@ -355,11 +396,11 @@ function cleanHmeRcdCsv(csvBuffer, log) {
         `Removing ${headerIndex} metadata/blank row(s) above the dataset.`
     );
 
-    // Keep header + all data beneath it
     const cleanedLines =
-        lines.slice(headerIndex);
+        lines.slice(
+            headerIndex
+        );
 
-    // Remove trailing empty rows
     while (
         cleanedLines.length > 0 &&
         cleanedLines[
@@ -369,13 +410,387 @@ function cleanHmeRcdCsv(csvBuffer, log) {
         cleanedLines.pop();
     }
 
-    // Rebuild using Windows-style CSV line endings
     const cleanedCsv =
-        cleanedLines.join('\r\n');
+        cleanedLines.join(
+            '\r\n'
+        );
 
     return Buffer.from(
         cleanedCsv,
         'utf8'
+    );
+}
+
+
+// =====================================================================
+// HELPER: Parse a CSV row while respecting quoted commas
+// =====================================================================
+
+function parseCsvRow(line) {
+    const values = [];
+
+    let current = '';
+    let insideQuotes = false;
+
+    for (
+        let i = 0;
+        i < line.length;
+        i++
+    ) {
+
+        const char =
+            line[i];
+
+        if (
+            char === '"'
+        ) {
+
+            if (
+                insideQuotes &&
+                line[i + 1] === '"'
+            ) {
+
+                current += '"';
+
+                i++;
+
+            } else {
+
+                insideQuotes =
+                    !insideQuotes;
+            }
+
+        } else if (
+            char === ',' &&
+            !insideQuotes
+        ) {
+
+            values.push(
+                current
+            );
+
+            current = '';
+
+        } else {
+
+            current += char;
+        }
+    }
+
+    values.push(
+        current
+    );
+
+    return values;
+}
+
+
+// =====================================================================
+// HELPER: Escape value for CSV output
+// =====================================================================
+
+function escapeCsvValue(value) {
+    const stringValue =
+        String(
+            value ?? ''
+        );
+
+    if (
+        stringValue.includes(',') ||
+        stringValue.includes('"') ||
+        stringValue.includes('\n') ||
+        stringValue.includes('\r')
+    ) {
+
+        return `"${stringValue.replace(
+            /"/g,
+            '""'
+        )}"`;
+    }
+
+    return stringValue;
+}
+
+
+// =====================================================================
+// HELPER: Add StoreLocation column to cleaned CSV
+// =====================================================================
+
+function addStoreLocationColumn(
+    csvBuffer,
+    storeLocation,
+    log
+) {
+    const csvText =
+        csvBuffer.toString(
+            'utf8'
+        );
+
+    const lines =
+        csvText
+            .split(/\r?\n/)
+            .filter(
+                line =>
+                    line.trim() !== ''
+            );
+
+    if (
+        lines.length === 0
+    ) {
+        throw new Error(
+            'Cannot add StoreLocation because cleaned CSV is empty.'
+        );
+    }
+
+    const headers =
+        parseCsvRow(
+            lines[0]
+        )
+            .map(
+                value =>
+                    value.trim()
+            );
+
+    if (
+        headers.includes(
+            'StoreLocation'
+        )
+    ) {
+
+        log.warning(
+            'StoreLocation column already exists. Skipping StoreLocation insertion.'
+        );
+
+        return csvBuffer;
+    }
+
+    const updatedLines = [];
+
+    // Add StoreLocation as first column
+    updatedLines.push(
+        `StoreLocation,${lines[0]}`
+    );
+
+    // Add StoreLocation to every data row
+    for (
+        let i = 1;
+        i < lines.length;
+        i++
+    ) {
+
+        updatedLines.push(
+            `${escapeCsvValue(storeLocation)},${lines[i]}`
+        );
+    }
+
+    const updatedCsv =
+        updatedLines.join(
+            '\r\n'
+        );
+
+    log.info(
+        `Added StoreLocation="${storeLocation}" to ${lines.length - 1} data row(s).`
+    );
+
+    return Buffer.from(
+        updatedCsv,
+        'utf8'
+    );
+}
+
+
+// =====================================================================
+// HELPER: Validate HME queue fields
+// =====================================================================
+
+function validateHmeQueueFields(
+    csvBuffer,
+    log
+) {
+    const csvText =
+        csvBuffer.toString(
+            'utf8'
+        );
+
+    const lines =
+        csvText
+            .split(/\r?\n/)
+            .filter(
+                line =>
+                    line.trim() !== ''
+            );
+
+    if (
+        lines.length < 2
+    ) {
+        throw new Error(
+            'Cleaned HME CSV contains no data rows.'
+        );
+    }
+
+
+    // -------------------------------------------------------------
+    // Parse header
+    // -------------------------------------------------------------
+
+    const headers =
+        parseCsvRow(
+            lines[0]
+        )
+            .map(
+                value =>
+                    value.trim()
+            );
+
+
+    const orderQueueIndex =
+        headers.indexOf(
+            'CarsInOrderQueue'
+        );
+
+    const orderPointStackIndex =
+        headers.indexOf(
+            'CarsInOrderPointStack'
+        );
+
+    const departureTimeIndex =
+        headers.indexOf(
+            'Departure_Time'
+        );
+
+
+    // -------------------------------------------------------------
+    // Ensure expected columns exist
+    // -------------------------------------------------------------
+
+    if (
+        orderQueueIndex === -1
+    ) {
+        throw new Error(
+            'CarsInOrderQueue column was not found in the HME RCD CSV.'
+        );
+    }
+
+    if (
+        orderPointStackIndex === -1
+    ) {
+        throw new Error(
+            'CarsInOrderPointStack column was not found in the HME RCD CSV.'
+        );
+    }
+
+
+    // -------------------------------------------------------------
+    // Find offending rows
+    // -------------------------------------------------------------
+
+    const offendingRows = [];
+
+    for (
+        let i = 1;
+        i < lines.length;
+        i++
+    ) {
+
+        const row =
+            parseCsvRow(
+                lines[i]
+            );
+
+        const carsInOrderQueue =
+            String(
+                row[
+                    orderQueueIndex
+                ] ?? ''
+            ).trim();
+
+        const carsInOrderPointStack =
+            String(
+                row[
+                    orderPointStackIndex
+                ] ?? ''
+            ).trim();
+
+
+        // Blank and zero are acceptable
+        const queueHasValue =
+            carsInOrderQueue !== '' &&
+            Number(
+                carsInOrderQueue
+            ) !== 0;
+
+        const stackHasValue =
+            carsInOrderPointStack !== '' &&
+            Number(
+                carsInOrderPointStack
+            ) !== 0;
+
+
+        if (
+            queueHasValue ||
+            stackHasValue
+        ) {
+
+            offendingRows.push({
+                csvRow:
+                    i + 1,
+
+                Departure_Time:
+                    departureTimeIndex !== -1
+                        ? row[
+                            departureTimeIndex
+                        ] ?? ''
+                        : '',
+
+                CarsInOrderQueue:
+                    carsInOrderQueue,
+
+                CarsInOrderPointStack:
+                    carsInOrderPointStack,
+            });
+        }
+    }
+
+
+    // -------------------------------------------------------------
+    // Fail Actor if queue/stack values exist
+    // -------------------------------------------------------------
+
+    if (
+        offendingRows.length > 0
+    ) {
+
+        log.error(
+            'HME RCD VALIDATION FAILED: ' +
+            `${offendingRows.length} row(s) contain non-zero values in ` +
+            'CarsInOrderQueue and/or CarsInOrderPointStack.'
+        );
+
+
+        for (
+            const row of offendingRows
+        ) {
+
+            log.error(
+                `Queue/Stack detected | ` +
+                `CSV Row=${row.csvRow} | ` +
+                `Departure_Time=${row.Departure_Time} | ` +
+                `CarsInOrderQueue=${row.CarsInOrderQueue || '(blank)'} | ` +
+                `CarsInOrderPointStack=${row.CarsInOrderPointStack || '(blank)'}`
+            );
+        }
+
+
+        throw new Error(
+            'HME RCD data contains non-zero CarsInOrderQueue and/or ' +
+            'CarsInOrderPointStack values. Actor terminated without saving CSV.'
+        );
+    }
+
+
+    log.info(
+        'HME RCD queue validation passed: ' +
+        'CarsInOrderQueue and CarsInOrderPointStack contain no non-zero values.'
     );
 }
 
@@ -391,13 +806,15 @@ const crawler =
 
         maxRequestRetries: 0,
 
-        requestHandlerTimeoutSecs: 300,
+        requestHandlerTimeoutSecs:
+            300,
 
         launchContext: {
             launchOptions: {
                 headless: true,
             },
         },
+
 
         async requestHandler({
             page,
@@ -420,6 +837,7 @@ const crawler =
                     {
                         waitUntil:
                             'domcontentloaded',
+
                         timeout:
                             60000,
                     }
@@ -442,6 +860,7 @@ const crawler =
                 await usernameInput.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -471,6 +890,7 @@ const crawler =
                 await continueButton.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         15000,
                 });
@@ -494,6 +914,7 @@ const crawler =
                 await passwordInput.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -523,6 +944,7 @@ const crawler =
                 await loginButton.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         15000,
                 });
@@ -602,6 +1024,7 @@ const crawler =
                 await storeInput.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -640,6 +1063,7 @@ const crawler =
                             {
                                 name:
                                     store,
+
                                 exact:
                                     true,
                             }
@@ -684,6 +1108,7 @@ const crawler =
                 await dateInput.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -852,6 +1277,7 @@ const crawler =
                 await viewReportButton.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -885,6 +1311,7 @@ const crawler =
                 await exportText.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         120000,
                 });
@@ -906,6 +1333,7 @@ const crawler =
                 await exportButton.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -968,7 +1396,6 @@ const crawler =
                 if (
                     !exportReady
                 ) {
-
                     throw new Error(
                         'Export button remained disabled after report load.'
                     );
@@ -1056,8 +1483,7 @@ const crawler =
                     );
 
                 if (
-                    await csvOption.count() ===
-                    0
+                    await csvOption.count() === 0
                 ) {
 
                     csvOption =
@@ -1073,6 +1499,7 @@ const crawler =
                 await csvOption.waitFor({
                     state:
                         'visible',
+
                     timeout:
                         30000,
                 });
@@ -1119,7 +1546,6 @@ const crawler =
                 if (
                     !downloadedPath
                 ) {
-
                     throw new Error(
                         'CSV download completed but Playwright did not return a file path.'
                     );
@@ -1131,35 +1557,44 @@ const crawler =
 
 
                 // =====================================================
-                // 31. BUILD FINAL FILE / STORAGE NAME
+                // 31. MATCH STORE KEY
                 // =====================================================
 
-                const safeDate =
-                    report_date.replace(
-                        /\//g,
-                        '-'
-                    );
-
-                    const storeKey =
+                const storeKey =
                     getStoreKey(
                         store,
                         store_key_values
                     );
-                
+
+                log.info(
+                    `Matched StoreLocation: ${storeKey}`
+                );
+
+
+                // =====================================================
+                // 32. BUILD FINAL FILE / STORAGE NAME
+                // =====================================================
+
                 const safeStoreKey =
                     sanitizeFileName(
                         storeKey
                     );
-                
-                const [month, day, year] =
-                report_date.split('/');
-                
+
+                const [
+                    month,
+                    day,
+                    year
+                ] =
+                    report_date.split(
+                        '/'
+                    );
+
                 const storageDate =
                     `${year}-${month}-${day}`;
-                
+
                 const fileName =
                     `${safeStoreKey}_${storageDate}.csv`;
-                
+
                 const recordKey =
                     fileName;
 
@@ -1169,36 +1604,70 @@ const crawler =
 
 
                 // =====================================================
-                // 32. READ CSV
+                // 33. READ RAW CSV
                 // =====================================================
 
                 const rawCsvBuffer =
-                await fs.readFile(
-                    downloadedPath
-                );
+                    await fs.readFile(
+                        downloadedPath
+                    );
 
                 log.info(
-                `Raw CSV downloaded: ${rawCsvBuffer.length} bytes`
+                    `Raw CSV downloaded: ${rawCsvBuffer.length} bytes`
                 );
 
 
                 // =====================================================
-                // 33. CLEAN HME CSV
+                // 34. CLEAN HME CSV
                 // =====================================================
 
+                const cleanedCsvBuffer =
+                    cleanHmeRcdCsv(
+                        rawCsvBuffer,
+                        log
+                    );
+
+                log.info(
+                    `Cleaned CSV created: ${cleanedCsvBuffer.length} bytes`
+                );
+
+
+                // =====================================================
+                // 35. ADD STORELOCATION
+                // =====================================================
+
+                log.info(
+                    `Adding StoreLocation column using matched store key: ${storeKey}`
+                );
+
                 const csvBuffer =
-                cleanHmeRcdCsv(
-                    rawCsvBuffer,
+                    addStoreLocationColumn(
+                        cleanedCsvBuffer,
+                        storeKey,
+                        log
+                    );
+
+                log.info(
+                    `StoreLocation column added. Final CSV size: ${csvBuffer.length} bytes`
+                );
+
+
+                // =====================================================
+                // 36. VALIDATE QUEUE / STACK DATA
+                // =====================================================
+
+                log.info(
+                    'Checking CarsInOrderQueue and CarsInOrderPointStack...'
+                );
+
+                validateHmeQueueFields(
+                    csvBuffer,
                     log
                 );
 
-                log.info(
-                `Cleaned CSV created: ${csvBuffer.length} bytes`
-                );
-
 
                 // =====================================================
-                // 34. OPEN NAMED APIFY KEY-VALUE STORE
+                // 37. OPEN NAMED APIFY KEY-VALUE STORE
                 // =====================================================
 
                 const hmeStore =
@@ -1212,7 +1681,7 @@ const crawler =
 
 
                 // =====================================================
-                // 35. SAVE CSV
+                // 38. SAVE CSV
                 // =====================================================
 
                 await hmeStore.setValue(
@@ -1234,7 +1703,7 @@ const crawler =
 
 
                 // =====================================================
-                // 36. SAVE RESULT METADATA
+                // 39. SAVE RESULT METADATA
                 // =====================================================
 
                 await Actor.setValue(
@@ -1244,6 +1713,9 @@ const crawler =
                             true,
 
                         store,
+
+                        storeLocation:
+                            storeKey,
 
                         report_date,
 
@@ -1280,7 +1752,7 @@ const crawler =
 
 
                 // =====================================================
-                // 37. PUSH RESULT TO DATASET
+                // 40. PUSH RESULT TO DATASET
                 // =====================================================
 
                 await Actor.pushData({
@@ -1288,6 +1760,9 @@ const crawler =
                         true,
 
                     store,
+
+                    storeLocation:
+                        storeKey,
 
                     report_date,
 
@@ -1360,6 +1835,7 @@ const crawler =
                                         index
                                     ) => ({
                                         index,
+
                                         url:
                                             frame.url(),
                                     })
@@ -1415,6 +1891,7 @@ const crawler =
 await crawler.run([
     {
         url,
+
         uniqueKey:
             'HME_RCD_REPORT',
     },
