@@ -32,6 +32,7 @@ const {
 // =====================================================================
 // INPUT VALIDATION
 // =====================================================================
+
 if (!username || !password) {
     throw new Error(
         'Both username and password are required.'
@@ -46,8 +47,9 @@ if (!report_date) {
 
 
 // =====================================================================
-// HELPER: Save screenshot to Apify Key-Value Store
+// HELPER: Save screenshot to default Apify Key-Value Store
 // =====================================================================
+
 async function saveScreenshot(page, key) {
     const screenshot = await page.screenshot({
         fullPage: true,
@@ -64,8 +66,9 @@ async function saveScreenshot(page, key) {
 
 
 // =====================================================================
-// HELPER: Sanitize filename / storage key
+// HELPER: Sanitize filename / record key
 // =====================================================================
+
 function sanitizeFileName(value) {
     return String(value)
         .replace(/[<>:"/\\|?*]/g, '-')
@@ -75,8 +78,9 @@ function sanitizeFileName(value) {
 
 
 // =====================================================================
-// HELPER: Select a Fluent UI combobox value
+// HELPER: Select Fluent UI combobox
 // =====================================================================
+
 async function selectCombobox(
     frame,
     selector,
@@ -149,8 +153,9 @@ async function selectCombobox(
 
 
 // =====================================================================
-// HELPER: Wait until a field becomes enabled
+// HELPER: Wait until field becomes enabled
 // =====================================================================
+
 async function waitUntilEnabled(
     frame,
     selector,
@@ -181,60 +186,9 @@ async function waitUntilEnabled(
 
 
 // =====================================================================
-// HELPER: Wait until a button becomes enabled
+// HELPER: Find the frame containing the RCD report
 // =====================================================================
-async function waitForButtonEnabled(
-    locator,
-    log,
-    timeout = 120000
-) {
-    const startTime =
-        Date.now();
 
-    while (
-        Date.now() - startTime < timeout
-    ) {
-
-        const visible =
-            await locator
-                .isVisible()
-                .catch(() => false);
-
-        const enabled =
-            await locator
-                .isEnabled()
-                .catch(() => false);
-
-        if (
-            visible &&
-            enabled
-        ) {
-
-            log.info(
-                'Button is visible and enabled.'
-            );
-
-            return;
-        }
-
-        await new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    1000
-                )
-        );
-    }
-
-    throw new Error(
-        `Button did not become enabled within ${timeout / 1000} seconds.`
-    );
-}
-
-
-// =====================================================================
-// HELPER: Find the frame containing the RCD Store combobox
-// =====================================================================
 async function findReportFrame(
     page,
     log,
@@ -333,6 +287,7 @@ async function findReportFrame(
 // =====================================================================
 // CRAWLER
 // =====================================================================
+
 const crawler =
     new PlaywrightCrawler({
 
@@ -361,8 +316,9 @@ const crawler =
             try {
 
                 // =====================================================
-                // 1. OPEN HME RCD PAGE
+                // 1. OPEN HME CLOUD
                 // =====================================================
+
                 await page.goto(
                     request.url,
                     {
@@ -381,6 +337,7 @@ const crawler =
                 // =====================================================
                 // 2. USERNAME
                 // =====================================================
+
                 const usernameInput =
                     page.locator(
                         'input[name="username"]'
@@ -409,6 +366,7 @@ const crawler =
                 // =====================================================
                 // 3. CONTINUE
                 // =====================================================
+
                 const continueButton =
                     page.locator(
                         'button[name="intent"][value="verify"]'
@@ -431,6 +389,7 @@ const crawler =
                 // =====================================================
                 // 4. PASSWORD
                 // =====================================================
+
                 const passwordInput =
                     page.locator(
                         'input[name="password"]'
@@ -459,6 +418,7 @@ const crawler =
                 // =====================================================
                 // 5. LOGIN
                 // =====================================================
+
                 const loginButton =
                     page.locator(
                         'button[name="intent"][value="login"]'
@@ -489,6 +449,7 @@ const crawler =
                 // =====================================================
                 // 6. SCREENSHOT AFTER LOGIN
                 // =====================================================
+
                 await saveScreenshot(
                     page,
                     'HME_AFTER_LOGIN_CLICK'
@@ -502,6 +463,7 @@ const crawler =
                 // =====================================================
                 // 7. FIND REPORT FRAME
                 // =====================================================
+
                 log.info(
                     'Looking for the frame containing the RCD report...'
                 );
@@ -519,8 +481,9 @@ const crawler =
 
 
                 // =====================================================
-                // 8. FIND STORE INPUT
+                // 8. STORE INPUT
                 // =====================================================
+
                 let storeInput =
                     reportFrame.getByRole(
                         'combobox',
@@ -555,6 +518,7 @@ const crawler =
                 // =====================================================
                 // 9. SELECT STORE
                 // =====================================================
+
                 log.info(
                     `Selecting store: ${store}`
                 );
@@ -615,6 +579,7 @@ const crawler =
                 // =====================================================
                 // 10. DATE
                 // =====================================================
+
                 const dateInput =
                     reportFrame.locator(
                         'input[aria-label="Date (MM/DD/YYYY):"]'
@@ -649,6 +614,7 @@ const crawler =
                 // =====================================================
                 // 11. WAIT FOR TIME FIELDS
                 // =====================================================
+
                 await waitUntilEnabled(
                     reportFrame,
                     '#P_HOUR_INI-input',
@@ -667,6 +633,7 @@ const crawler =
                 // =====================================================
                 // 12. START HOUR
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_HOUR_INI-input',
@@ -678,6 +645,7 @@ const crawler =
                 // =====================================================
                 // 13. START MINUTE
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_MINUTE_INI-input',
@@ -689,6 +657,7 @@ const crawler =
                 // =====================================================
                 // 14. START AM/PM
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_AMPM_INI-input',
@@ -700,6 +669,7 @@ const crawler =
                 // =====================================================
                 // 15. STOP HOUR
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_HOUR_END-input',
@@ -711,6 +681,7 @@ const crawler =
                 // =====================================================
                 // 16. STOP MINUTE
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_MINUTE_END-input',
@@ -722,6 +693,7 @@ const crawler =
                 // =====================================================
                 // 17. STOP AM/PM
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_AMPM_END-input',
@@ -733,6 +705,7 @@ const crawler =
                 // =====================================================
                 // 18. TIME FORMAT
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_FORMAT_TIME-input',
@@ -744,6 +717,7 @@ const crawler =
                 // =====================================================
                 // 19. INCLUDE PULLINS
                 // =====================================================
+
                 await selectCombobox(
                     reportFrame,
                     '#P_PULLINS-input',
@@ -755,6 +729,7 @@ const crawler =
                 // =====================================================
                 // 20. SCREENSHOT PARAMETERS
                 // =====================================================
+
                 await saveScreenshot(
                     page,
                     'HME_RCD_PARAMETERS_COMPLETE'
@@ -768,6 +743,7 @@ const crawler =
                 // =====================================================
                 // 21. VIEW REPORT
                 // =====================================================
+
                 const viewReportButton =
                     reportFrame.getByText(
                         'View report',
@@ -792,24 +768,25 @@ const crawler =
 
 
                 // =====================================================
-                // 22. WAIT FOR EXPORT BUTTON
+                // 22. WAIT FOR EXPORT TEXT
                 // =====================================================
+
                 log.info(
-                    'Waiting for report to load and Export to become enabled...'
+                    'Waiting for report to load and Export control to become available...'
                 );
 
-                const exportButton =
+                const exportText =
                     reportFrame
-                        .getByRole(
-                            'button',
+                        .getByText(
+                            'Export',
                             {
-                                name:
-                                    /Export/i,
+                                exact:
+                                    true,
                             }
                         )
                         .first();
 
-                await exportButton.waitFor({
+                await exportText.waitFor({
                     state:
                         'visible',
                     timeout:
@@ -817,18 +794,89 @@ const crawler =
                 });
 
                 log.info(
-                    'Export button found. Waiting for it to become enabled...'
+                    'Export text is visible.'
                 );
 
 
                 // =====================================================
-                // 23. WAIT UNTIL EXPORT IS ENABLED
+                // 23. FIND EXPORT BUTTON
                 // =====================================================
-                await waitForButtonEnabled(
-                    exportButton,
-                    log,
+
+                const exportButton =
+                    exportText.locator(
+                        'xpath=ancestor::button[1]'
+                    );
+
+                await exportButton.waitFor({
+                    state:
+                        'visible',
+                    timeout:
+                        30000,
+                });
+
+                log.info(
+                    'Export button located.'
+                );
+
+
+                // =====================================================
+                // 24. WAIT UNTIL EXPORT IS ENABLED
+                // =====================================================
+
+                const exportStartTime =
+                    Date.now();
+
+                let exportReady =
+                    false;
+
+                while (
+                    Date.now() -
+                        exportStartTime <
                     120000
-                );
+                ) {
+
+                    const disabled =
+                        await exportButton
+                            .isDisabled()
+                            .catch(
+                                () => true
+                            );
+
+                    const ariaDisabled =
+                        await exportButton
+                            .getAttribute(
+                                'aria-disabled'
+                            );
+
+                    log.info(
+                        `Export state -> disabled=${disabled}, aria-disabled=${ariaDisabled}`
+                    );
+
+                    if (
+                        !disabled &&
+                        ariaDisabled !==
+                            'true'
+                    ) {
+
+                        exportReady =
+                            true;
+
+                        break;
+                    }
+
+                    await page.waitForTimeout(
+                        1000
+                    );
+                }
+
+                if (
+                    !exportReady
+                ) {
+
+                    throw new Error(
+                        'Export button remained disabled after report load.'
+                    );
+                }
 
                 log.info(
                     'Export button is enabled. Report is ready.'
@@ -836,8 +884,9 @@ const crawler =
 
 
                 // =====================================================
-                // 24. SCREENSHOT REPORT LOADED
+                // 25. SCREENSHOT REPORT LOADED
                 // =====================================================
+
                 await saveScreenshot(
                     page,
                     'HME_RCD_REPORT_LOADED'
@@ -849,22 +898,58 @@ const crawler =
 
 
                 // =====================================================
-                // 25. CLICK EXPORT
+                // 26. FIND EXPORT CHEVRON
                 // =====================================================
-                await exportButton.click();
+
+                const exportChevron =
+                    exportButton.locator(
+                        'i[data-icon-name="ChevronDown"]'
+                    );
+
+                const chevronVisible =
+                    await exportChevron
+                        .isVisible()
+                        .catch(
+                            () => false
+                        );
+
+
+                // =====================================================
+                // 27. OPEN EXPORT MENU
+                // =====================================================
 
                 log.info(
-                    'Clicked Export.'
+                    'Opening Export menu...'
                 );
+
+                if (
+                    chevronVisible
+                ) {
+
+                    log.info(
+                        'Export chevron found. Clicking dropdown arrow.'
+                    );
+
+                    await exportChevron.click();
+
+                } else {
+
+                    log.warning(
+                        'Export chevron not found. Clicking Export button instead.'
+                    );
+
+                    await exportButton.click();
+                }
 
                 await page.waitForTimeout(
-                    500
+                    750
                 );
 
 
                 // =====================================================
-                // 26. FIND CSV OPTION
+                // 28. FIND CSV OPTION
                 // =====================================================
+
                 let csvOption =
                     reportFrame.getByText(
                         'Comma Separated Values (.csv)',
@@ -875,7 +960,8 @@ const crawler =
                     );
 
                 if (
-                    await csvOption.count() === 0
+                    await csvOption.count() ===
+                    0
                 ) {
 
                     csvOption =
@@ -901,8 +987,9 @@ const crawler =
 
 
                 // =====================================================
-                // 27. DOWNLOAD CSV
+                // 29. START CSV DOWNLOAD
                 // =====================================================
+
                 log.info(
                     'Selecting CSV export...'
                 );
@@ -927,8 +1014,9 @@ const crawler =
 
 
                 // =====================================================
-                // 28. WAIT FOR DOWNLOAD PATH
+                // 30. WAIT FOR DOWNLOAD TO COMPLETE
                 // =====================================================
+
                 const downloadedPath =
                     await download.path();
 
@@ -937,7 +1025,7 @@ const crawler =
                 ) {
 
                     throw new Error(
-                        'CSV download completed but no file path was returned.'
+                        'CSV download completed but Playwright did not return a file path.'
                     );
                 }
 
@@ -947,14 +1035,14 @@ const crawler =
 
 
                 // =====================================================
-                // 29. BUILD SAFE FILE NAME
+                // 31. BUILD FINAL FILE / STORAGE NAME
                 // =====================================================
+
                 const safeDate =
-                    report_date
-                        .replace(
-                            /\//g,
-                            '-'
-                        );
+                    report_date.replace(
+                        /\//g,
+                        '-'
+                    );
 
                 const safeStore =
                     sanitizeFileName(
@@ -973,8 +1061,9 @@ const crawler =
 
 
                 // =====================================================
-                // 30. READ CSV
+                // 32. READ CSV
                 // =====================================================
+
                 const csvBuffer =
                     await fs.readFile(
                         downloadedPath
@@ -982,8 +1071,9 @@ const crawler =
 
 
                 // =====================================================
-                // 31. OPEN NAMED STORAGE
+                // 33. OPEN NAMED APIFY KEY-VALUE STORE
                 // =====================================================
+
                 const hmeStore =
                     await Actor.openKeyValueStore(
                         'hthsolutions-hme-rcd'
@@ -995,8 +1085,9 @@ const crawler =
 
 
                 // =====================================================
-                // 32. SAVE CSV
+                // 34. SAVE CSV
                 // =====================================================
+
                 await hmeStore.setValue(
                     recordKey,
                     csvBuffer,
@@ -1007,7 +1098,7 @@ const crawler =
                 );
 
                 log.info(
-                    `CSV saved successfully to hthsolutions-hme-rcd`
+                    'CSV saved successfully to hthsolutions-hme-rcd'
                 );
 
                 log.info(
@@ -1016,8 +1107,9 @@ const crawler =
 
 
                 // =====================================================
-                // 33. SAVE RESULT METADATA
+                // 35. SAVE RESULT METADATA
                 // =====================================================
+
                 await Actor.setValue(
                     'HME_RCD_RESULT',
                     {
@@ -1061,8 +1153,9 @@ const crawler =
 
 
                 // =====================================================
-                // 34. PUSH RESULT TO DATASET
+                // 36. PUSH RESULT TO DATASET
                 // =====================================================
+
                 await Actor.pushData({
                     success:
                         true,
@@ -1088,7 +1181,6 @@ const crawler =
                         new Date().toISOString(),
                 });
 
-
                 log.info(
                     'HME RCD CSV export completed successfully.'
                 );
@@ -1098,6 +1190,7 @@ const crawler =
                 // =====================================================
                 // FAILURE HANDLING
                 // =====================================================
+
                 log.error(
                     `HME RCD Actor failed: ${error.message}`
                 );
@@ -1121,7 +1214,6 @@ const crawler =
                         `Could not save failure screenshot: ${screenshotError.message}`
                     );
                 }
-
 
                 try {
 
@@ -1192,6 +1284,7 @@ const crawler =
 // =====================================================================
 // START ACTOR
 // =====================================================================
+
 await crawler.run([
     {
         url,
