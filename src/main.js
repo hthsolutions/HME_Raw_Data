@@ -310,6 +310,75 @@ function getStoreKey(storeValue, storeKeyValues) {
         .trim();
 }
 
+// =====================================================================
+// HELPER: Remove HME report metadata above actual RCD data
+// =====================================================================
+
+function cleanHmeRcdCsv(csvBuffer, log) {
+
+    // Convert downloaded CSV buffer to text
+    let csvText = csvBuffer.toString('utf8');
+
+    // Remove UTF-8 BOM if present
+    csvText = csvText.replace(/^\uFEFF/, '');
+
+    // Support both Windows and Unix line endings
+    const lines = csvText.split(/\r?\n/);
+
+    // Find the actual RCD table header
+    const headerIndex = lines.findIndex(
+        line => {
+            const upper =
+                line.toUpperCase();
+
+            return (
+                upper.includes('DAYPART') &&
+                upper.includes('DEPARTURE_TIME') &&
+                upper.includes('EVENT_NAME') &&
+                upper.includes('EVENTTYPE') &&
+                upper.includes('AVGTIME')
+            );
+        }
+    );
+
+    if (headerIndex === -1) {
+        throw new Error(
+            'Could not locate the RCD data header in the downloaded CSV.'
+        );
+    }
+
+    log.info(
+        `RCD data header found at CSV row ${headerIndex + 1}.`
+    );
+
+    log.info(
+        `Removing ${headerIndex} metadata/blank row(s) above the dataset.`
+    );
+
+    // Keep header + all data beneath it
+    const cleanedLines =
+        lines.slice(headerIndex);
+
+    // Remove trailing empty rows
+    while (
+        cleanedLines.length > 0 &&
+        cleanedLines[
+            cleanedLines.length - 1
+        ].trim() === ''
+    ) {
+        cleanedLines.pop();
+    }
+
+    // Rebuild using Windows-style CSV line endings
+    const cleanedCsv =
+        cleanedLines.join('\r\n');
+
+    return Buffer.from(
+        cleanedCsv,
+        'utf8'
+    );
+}
+
 
 // =====================================================================
 // CRAWLER
@@ -1103,14 +1172,33 @@ const crawler =
                 // 32. READ CSV
                 // =====================================================
 
-                const csvBuffer =
-                    await fs.readFile(
-                        downloadedPath
-                    );
+                const rawCsvBuffer =
+                await fs.readFile(
+                    downloadedPath
+                );
+
+                log.info(
+                `Raw CSV downloaded: ${rawCsvBuffer.length} bytes`
+                );
 
 
                 // =====================================================
-                // 33. OPEN NAMED APIFY KEY-VALUE STORE
+                // 33. CLEAN HME CSV
+                // =====================================================
+
+                const csvBuffer =
+                cleanHmeRcdCsv(
+                    rawCsvBuffer,
+                    log
+                );
+
+                log.info(
+                `Cleaned CSV created: ${csvBuffer.length} bytes`
+                );
+
+
+                // =====================================================
+                // 34. OPEN NAMED APIFY KEY-VALUE STORE
                 // =====================================================
 
                 const hmeStore =
@@ -1124,7 +1212,7 @@ const crawler =
 
 
                 // =====================================================
-                // 34. SAVE CSV
+                // 35. SAVE CSV
                 // =====================================================
 
                 await hmeStore.setValue(
@@ -1146,7 +1234,7 @@ const crawler =
 
 
                 // =====================================================
-                // 35. SAVE RESULT METADATA
+                // 36. SAVE RESULT METADATA
                 // =====================================================
 
                 await Actor.setValue(
@@ -1192,7 +1280,7 @@ const crawler =
 
 
                 // =====================================================
-                // 36. PUSH RESULT TO DATASET
+                // 37. PUSH RESULT TO DATASET
                 // =====================================================
 
                 await Actor.pushData({
