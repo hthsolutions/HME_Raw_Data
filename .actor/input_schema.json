@@ -4,27 +4,137 @@
     "type": "object",
     "schemaVersion": 1,
     "properties": {
-        "url": "https://hmecloud.com/new-reports/rcd",
-        "username": "YOUR_USERNAME",
-        "password": "YOUR_PASSWORD",
-    
-        "store": "(Ungrouped) 11312 Leander - Other",
-    
-        "report_date": "09/10/2026",
-    
-        "start_hour": "10",
-        "start_minute": "30",
-        "start_ampm": "AM",
-    
-        "stop_hour": "11",
-        "stop_minute": "30",
-        "stop_ampm": "PM",
-    
-        "time_format": "Seconds",
-        "include_pullins": "No"
+        "url": {
+            "title": "HME RCD URL",
+            "type": "string",
+            "description": "URL of the HME Cloud Raw Car Data report.",
+            "editor": "textfield",
+            "default": "https://hmecloud.com/new-reports/rcd"
+        },
+        "username": {
+            "title": "HME Cloud Username",
+            "type": "string",
+            "description": "Username used to log into HME Cloud.",
+            "editor": "textfield"
+        },
+        "password": {
+            "title": "HME Cloud Password",
+            "type": "string",
+            "description": "Password used to log into HME Cloud.",
+            "editor": "textfield",
+            "isSecret": true
+        },
+        "store": {
+            "title": "Store",
+            "type": "string",
+            "description": "HME Cloud store to select.",
+            "editor": "textfield",
+            "default": "(Ungrouped) 11312 Leander - Other"
+        },
+        "report_date": {
+            "title": "Report Date",
+            "type": "string",
+            "description": "Report date in MM/DD/YYYY format.",
+            "editor": "textfield",
+            "default": "09/10/2026"
+        },
+        "start_hour": {
+            "title": "Start Hour",
+            "type": "string",
+            "description": "Starting hour using 12-hour time.",
+            "editor": "textfield",
+            "default": "10"
+        },
+        "start_minute": {
+            "title": "Start Minute",
+            "type": "string",
+            "description": "Starting minute.",
+            "editor": "textfield",
+            "default": "30"
+        },
+        "start_ampm": {
+            "title": "Start AM/PM",
+            "type": "string",
+            "description": "Starting AM or PM.",
+            "editor": "select",
+            "default": "AM",
+            "enum": [
+                "AM",
+                "PM"
+            ],
+            "enumTitles": [
+                "AM",
+                "PM"
+            ]
+        },
+        "stop_hour": {
+            "title": "Stop Hour",
+            "type": "string",
+            "description": "Ending hour using 12-hour time.",
+            "editor": "textfield",
+            "default": "11"
+        },
+        "stop_minute": {
+            "title": "Stop Minute",
+            "type": "string",
+            "description": "Ending minute.",
+            "editor": "textfield",
+            "default": "30"
+        },
+        "stop_ampm": {
+            "title": "Stop AM/PM",
+            "type": "string",
+            "description": "Ending AM or PM.",
+            "editor": "select",
+            "default": "PM",
+            "enum": [
+                "AM",
+                "PM"
+            ],
+            "enumTitles": [
+                "AM",
+                "PM"
+            ]
+        },
+        "time_format": {
+            "title": "Time Format",
+            "type": "string",
+            "description": "Time format used in the HME RCD report.",
+            "editor": "select",
+            "default": "Seconds",
+            "enum": [
+                "Seconds"
+            ],
+            "enumTitles": [
+                "Seconds"
+            ]
+        },
+        "include_pullins": {
+            "title": "Include Pullins",
+            "type": "string",
+            "description": "Whether pull-ins should be included in the report.",
+            "editor": "select",
+            "default": "No",
+            "enum": [
+                "No",
+                "Yes"
+            ],
+            "enumTitles": [
+                "No",
+                "Yes"
+            ]
+        }
     },
     "required": [
         "username",
-        "password"
+        "password",
+        "store",
+        "report_date",
+        "start_hour",
+        "start_minute",
+        "start_ampm",
+        "stop_hour",
+        "stop_minute",
+        "stop_ampm"
     ]
 }
