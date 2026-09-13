@@ -1082,11 +1082,17 @@ const crawler =
                         storeKey
                     );
                 
+                const [month, day, year] =
+                report_date.split('/');
+                
+                const storageDate =
+                    `${year}-${month}-${day}`;
+                
                 const fileName =
-                    `${safeStoreKey} - ${safeDate}.csv`;
+                    `${safeStoreKey}_${storageDate}.csv`;
                 
                 const recordKey =
-                    `${safeStoreKey} - ${safeDate}`;
+                    fileName;
 
                 log.info(
                     `Final CSV filename: ${fileName}`
