@@ -4,6 +4,22 @@ import fs from 'node:fs/promises';
 
 await Actor.init();
 
+const SUPABASE_URL =
+    process.env.SUPABASE_URL;
+
+const SUPABASE_SERVICE_ROLE_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (
+    !SUPABASE_URL ||
+    !SUPABASE_SERVICE_ROLE_KEY
+) {
+    throw new Error(
+        'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.'
+    );
+}
+
+
 const input = await Actor.getInput();
 
 const {
@@ -793,6 +809,519 @@ function validateHmeQueueFields(
         'CarsInOrderQueue and CarsInOrderPointStack contain no non-zero values.'
     );
 }
+
+function normalizeDepartureTime(value) {
+    const input =
+        String(value ?? '').trim();
+
+    if (!input) {
+        return null;
+    }
+
+    const match =
+        input.match(
+            /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i
+        );
+
+    if (!match) {
+        throw new Error(
+            `Unexpected Departure_Time format: "${input}"`
+        );
+    }
+
+    let [
+        ,
+        month,
+        day,
+        year,
+        hour,
+        minute,
+        second,
+        ampm
+    ] = match;
+
+    let hour24 =
+        Number(hour);
+
+    const upperAmPm =
+        ampm.toUpperCase();
+
+    if (
+        upperAmPm === 'PM' &&
+        hour24 !== 12
+    ) {
+        hour24 += 12;
+    }
+
+    if (
+        upperAmPm === 'AM' &&
+        hour24 === 12
+    ) {
+        hour24 = 0;
+    }
+
+    return (
+        `${year}-` +
+        `${String(month).padStart(2, '0')}-` +
+        `${String(day).padStart(2, '0')} ` +
+        `${String(hour24).padStart(2, '0')}:` +
+        `${minute}:` +
+        `${second}`
+    );
+}
+
+function pivotHmeRcdCsv(
+    csvBuffer,
+    log
+) {
+    const csvText =
+        csvBuffer.toString('utf8');
+
+    const lines =
+        csvText
+            .split(/\r?\n/)
+            .filter(
+                line =>
+                    line.trim() !== ''
+            );
+
+    if (lines.length < 2) {
+        throw new Error(
+            'No HME data rows available for pivot.'
+        );
+    }
+
+    const headers =
+        parseCsvRow(lines[0])
+            .map(
+                value =>
+                    value.trim()
+            );
+
+    const getIndex =
+        columnName => {
+
+            const index =
+                headers.indexOf(
+                    columnName
+                );
+
+            if (index === -1) {
+                throw new Error(
+                    `Required column "${columnName}" was not found.`
+                );
+            }
+
+            return index;
+        };
+
+
+    const storeLocationIndex =
+        getIndex(
+            'StoreLocation'
+        );
+
+    const departureTimeIndex =
+        getIndex(
+            'Departure_Time'
+        );
+
+    const eventNameIndex =
+        getIndex(
+            'Event_Name'
+        );
+
+    const totalCarsIndex =
+        getIndex(
+            'Total_Cars'
+        );
+
+    const eventTypeIndex =
+        getIndex(
+            'EventType'
+        );
+
+    const avgTimeIndex =
+        getIndex(
+            'AvgTime'
+        );
+
+
+    const groups =
+        new Map();
+
+
+    for (
+        let i = 1;
+        i < lines.length;
+        i++
+    ) {
+
+        const row =
+            parseCsvRow(
+                lines[i]
+            );
+
+
+        const storeLocation =
+            String(
+                row[
+                    storeLocationIndex
+                ] ?? ''
+            ).trim();
+
+
+        const departureTimeRaw =
+            String(
+                row[
+                    departureTimeIndex
+                ] ?? ''
+            ).trim();
+
+
+        const eventName =
+            String(
+                row[
+                    eventNameIndex
+                ] ?? ''
+            ).trim();
+
+
+        if (
+            eventName !==
+            'Car_Departure'
+        ) {
+            continue;
+        }
+
+
+        const eventType =
+            String(
+                row[
+                    eventTypeIndex
+                ] ?? ''
+            )
+                .trim()
+                .toLowerCase()
+                .replace(
+                    /\s+/g,
+                    ''
+                );
+
+
+        const avgTimeRaw =
+            String(
+                row[
+                    avgTimeIndex
+                ] ?? ''
+            ).trim();
+
+
+        const totalCarsRaw =
+            String(
+                row[
+                    totalCarsIndex
+                ] ?? ''
+            ).trim();
+
+
+        const avgTime =
+            avgTimeRaw === ''
+                ? null
+                : Number(avgTimeRaw);
+
+
+        const totalCars =
+            totalCarsRaw === ''
+                ? null
+                : Number(totalCarsRaw);
+
+
+        const departureTime =
+            normalizeDepartureTime(
+                departureTimeRaw
+            );
+
+
+        const groupKey =
+            `${storeLocation}|${departureTime}`;
+
+
+        if (
+            !groups.has(
+                groupKey
+            )
+        ) {
+
+            groups.set(
+                groupKey,
+                {
+                    primary_key:
+                        groupKey,
+
+                    StoreLocation:
+                        storeLocation,
+
+                    Departure_Time:
+                        departureTime,
+
+                    Event_Name:
+                        eventName,
+
+                    Total_Cars:
+                        totalCars,
+
+                    Menu_Board:
+                        null,
+
+                    Greet:
+                        null,
+
+                    Service:
+                        null,
+
+                    Lane_Queue:
+                        null,
+
+                    Lane_Total_Raw:
+                        null,
+
+                    eventCounts: {},
+                }
+            );
+        }
+
+
+        const group =
+            groups.get(
+                groupKey
+            );
+
+
+        group.Total_Cars =
+            totalCars;
+
+
+        group.eventCounts[
+            eventType
+        ] =
+            (
+                group.eventCounts[
+                    eventType
+                ] ?? 0
+            ) + 1;
+
+
+        switch (
+            eventType
+        ) {
+
+            case 'menuboard':
+                group.Menu_Board =
+                    avgTime;
+                break;
+
+            case 'greet':
+                group.Greet =
+                    avgTime;
+                break;
+
+            case 'service':
+                group.Service =
+                    avgTime;
+                break;
+
+            case 'lanequeue':
+                group.Lane_Queue =
+                    avgTime;
+                break;
+
+            case 'lanetotal':
+                group.Lane_Total_Raw =
+                    avgTime;
+                break;
+        }
+    }
+
+
+    const records = [];
+
+
+    for (
+        const group of
+        groups.values()
+    ) {
+
+        const duplicateEvents =
+            Object.entries(
+                group.eventCounts
+            )
+                .filter(
+                    ([, count]) =>
+                        count > 1
+                );
+
+
+        if (
+            duplicateEvents.length > 0
+        ) {
+
+            throw new Error(
+                `Duplicate HME event rows detected for ${group.primary_key}: ` +
+                duplicateEvents
+                    .map(
+                        ([type, count]) =>
+                            `${type}=${count}`
+                    )
+                    .join(', ')
+            );
+        }
+
+
+        const calculatedLaneTotal =
+            (
+                group.Lane_Queue ?? 0
+            ) +
+            (
+                group.Menu_Board ?? 0
+            ) +
+            (
+                group.Service ?? 0
+            );
+
+
+        const laneTotal =
+            group.Lane_Total_Raw ===
+            calculatedLaneTotal
+                ? group.Lane_Total_Raw
+                : null;
+
+
+        if (
+            laneTotal === null
+        ) {
+
+            log.warning(
+                `Lane_Total validation failed for ${group.primary_key}. ` +
+                `Raw=${group.Lane_Total_Raw}, ` +
+                `Calculated=${calculatedLaneTotal}`
+            );
+        }
+
+
+        records.push({
+            primary_key:
+                group.primary_key,
+
+            StoreLocation:
+                group.StoreLocation,
+
+            Departure_Time:
+                group.Departure_Time,
+
+            Event_Name:
+                group.Event_Name,
+
+            Total_Cars:
+                group.Total_Cars,
+
+            Menu_Board:
+                group.Menu_Board,
+
+            Greet:
+                group.Greet,
+
+            Service:
+                group.Service,
+
+            Lane_Queue:
+                group.Lane_Queue,
+
+            Lane_Total:
+                laneTotal,
+        });
+    }
+
+
+    log.info(
+        `Pivoted ${lines.length - 1} HME event rows into ${records.length} car records.`
+    );
+
+
+    return records;
+}
+
+async function upsertHmeRowsToSupabase(
+    records,
+    log
+) {
+    if (
+        records.length === 0
+    ) {
+
+        log.warning(
+            'No HME records available for Supabase upsert.'
+        );
+
+        return;
+    }
+
+
+    const tableName =
+        'daily-hme-rcd-summary';
+
+
+    const url =
+        `${SUPABASE_URL}/rest/v1/${encodeURIComponent(tableName)}?on_conflict=primary_key`;
+
+
+    const response =
+        await fetch(
+            url,
+            {
+                method:
+                    'POST',
+
+                headers: {
+                    'Content-Type':
+                        'application/json',
+
+                    'apikey':
+                        SUPABASE_SERVICE_ROLE_KEY,
+
+                    'Authorization':
+                        `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+
+                    'Prefer':
+                        'resolution=merge-duplicates,return=minimal',
+                },
+
+                body:
+                    JSON.stringify(
+                        records
+                    ),
+            }
+        );
+
+
+    if (
+        !response.ok
+    ) {
+
+        const errorText =
+            await response.text();
+
+        throw new Error(
+            `Supabase upsert failed (${response.status}): ${errorText}`
+        );
+    }
+
+
+    log.info(
+        `Successfully upserted ${records.length} HME records into ${tableName}.`
+    );
+}
+
 
 
 // =====================================================================
@@ -1663,6 +2192,30 @@ const crawler =
                 validateHmeQueueFields(
                     csvBuffer,
                     log
+                );
+
+                // =====================================================
+                // PIVOT HME DATA
+                // =====================================================
+
+                const hmeRecords =
+                pivotHmeRcdCsv(
+                    csvBuffer,
+                    log
+                );
+
+
+                // =====================================================
+                // UPSERT INTO SUPABASE
+                // =====================================================
+
+                log.info(
+                `Preparing to upsert ${hmeRecords.length} records into Supabase...`
+                );
+
+                await upsertHmeRowsToSupabase(
+                hmeRecords,
+                log
                 );
 
 
