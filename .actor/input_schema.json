@@ -4,26 +4,24 @@
     "type": "object",
     "schemaVersion": 1,
     "properties": {
-        "url": {
-            "title": "HME RCD URL",
-            "type": "string",
-            "editor": "textfield",
-            "description": "URL of the HME Cloud Raw Car Data report.",
-            "default": "https://hmecloud.com/new-reports/rcd"
-        },
-        "username": {
-            "title": "HME Cloud Username",
-            "type": "string",
-            "editor": "textfield",
-            "description": "Username used to log into HME Cloud."
-        },
-        "password": {
-            "title": "HME Cloud Password",
-            "type": "string",
-            "editor": "textfield",
-            "isSecret": true,
-            "description": "Password used to log into HME Cloud."
-        }
+        "url": "https://hmecloud.com/new-reports/rcd",
+        "username": "YOUR_USERNAME",
+        "password": "YOUR_PASSWORD",
+    
+        "store": "(Ungrouped) 11312 Leander - Other",
+    
+        "report_date": "09/10/2026",
+    
+        "start_hour": "10",
+        "start_minute": "30",
+        "start_ampm": "AM",
+    
+        "stop_hour": "11",
+        "stop_minute": "30",
+        "stop_ampm": "PM",
+    
+        "time_format": "Seconds",
+        "include_pullins": "No"
     },
     "required": [
         "username",
