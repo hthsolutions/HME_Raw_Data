@@ -60,12 +60,12 @@ async function saveScreenshot(page, key) {
 // HELPER: Select a Fluent UI combobox value
 // =====================================================================
 async function selectCombobox(
-    page,
+    frame,
     selector,
     value,
     log
 ) {
-    const inputField = page.locator(selector);
+    const inputField = frame.locator(selector);
 
     await inputField.waitFor({
         state: 'visible',
@@ -74,21 +74,19 @@ async function selectCombobox(
 
     await inputField.click();
 
-    // Clear anything currently in the field
     await inputField.fill('');
 
-    // Type the desired value
     await inputField.fill(String(value));
 
     log.info(
         `Entered "${value}" into ${selector}`
     );
 
-    // Give the Fluent UI dropdown a moment to render
-    await page.waitForTimeout(750);
+    // Give dropdown options time to render
+    await frame.page().waitForTimeout(750);
 
-    // Try to find an exact matching option
-    const exactOption = page
+    // Look for exact option in the same frame
+    const exactOption = frame
         .getByRole('option', {
             name: String(value),
             exact: true,
@@ -106,29 +104,27 @@ async function selectCombobox(
             `Selected dropdown option "${value}".`
         );
     } else {
-        // Fallback for comboboxes that accept typed values
         log.warning(
-            `Exact option "${value}" not found. ` +
+            `Exact dropdown option "${value}" was not found. ` +
             'Using Enter as fallback.'
         );
 
         await inputField.press('Enter');
     }
 
-    // Wait briefly for React state to update
-    await page.waitForTimeout(500);
+    await frame.page().waitForTimeout(500);
 }
 
 
 // =====================================================================
-// HELPER: Wait until a field becomes enabled
+// HELPER: Wait until field becomes enabled
 // =====================================================================
 async function waitUntilEnabled(
-    page,
+    frame,
     selector,
     timeout = 60000
 ) {
-    await page.waitForFunction(
+    await frame.waitForFunction(
         (sel) => {
             const element =
                 document.querySelector(sel);
@@ -153,11 +149,101 @@ async function waitUntilEnabled(
 
 
 // =====================================================================
+// HELPER: Find the frame containing the RCD Store combobox
+// =====================================================================
+async function findReportFrame(
+    page,
+    log,
+    timeout = 60000
+) {
+    const startTime = Date.now();
+
+    while (
+        Date.now() - startTime < timeout
+    ) {
+
+        const frames = page.frames();
+
+        log.info(
+            `Searching ${frames.length} frame(s) for RCD Store combobox...`
+        );
+
+        for (
+            let i = 0;
+            i < frames.length;
+            i++
+        ) {
+            const frame = frames[i];
+
+            log.info(
+                `Checking frame ${i}: ${frame.url()}`
+            );
+
+            try {
+                const storeByRole =
+                    frame.getByRole(
+                        'combobox',
+                        {
+                            name: 'Store:',
+                        }
+                    );
+
+                const roleCount =
+                    await storeByRole.count();
+
+                if (roleCount > 0) {
+                    log.info(
+                        `RCD Store combobox found in frame ${i}: ${frame.url()}`
+                    );
+
+                    return frame;
+                }
+
+                // Secondary fallback using the ID
+                const storeById =
+                    frame.locator(
+                        '#P_STORE_ID-input'
+                    );
+
+                const idCount =
+                    await storeById.count();
+
+                if (idCount > 0) {
+                    log.info(
+                        `RCD Store input found by ID in frame ${i}: ${frame.url()}`
+                    );
+
+                    return frame;
+                }
+
+            } catch (error) {
+                log.debug(
+                    `Unable to inspect frame ${i}: ${error.message}`
+                );
+            }
+        }
+
+        await page.waitForTimeout(1000);
+    }
+
+    throw new Error(
+        'Could not locate the RCD Store combobox in any page frame.'
+    );
+}
+
+
+// =====================================================================
 // CRAWLER
 // =====================================================================
 const crawler = new PlaywrightCrawler({
 
     maxRequestsPerCrawl: 1,
+
+    // While developing, avoid repeated login attempts
+    maxRequestRetries: 0,
+
+    // Give HME enough time to authenticate/render report UI
+    requestHandlerTimeoutSecs: 180,
 
     launchContext: {
         launchOptions: {
@@ -284,70 +370,130 @@ const crawler = new PlaywrightCrawler({
 
             await loginButton.click();
 
+            await page.waitForTimeout(3000);
+
+            log.info(
+                `URL after login click: ${page.url()}`
+            );
+
 
             // =========================================================
-            // 6. WAIT FOR RCD REPORT PAGE
-            //
-            // Instead of checking only the URL, wait for the Store
-            // selector. This confirms that the actual RCD report page
-            // has loaded.
+            // 6. SCREENSHOT AFTER LOGIN
             // =========================================================
-            const storeSelector =
-                '#P_STORE_ID-input';
+            await saveScreenshot(
+                page,
+                'HME_AFTER_LOGIN_CLICK'
+            );
 
-            const storeInput =
-                page.locator(
-                    storeSelector
+            log.info(
+                'Saved screenshot: HME_AFTER_LOGIN_CLICK'
+            );
+
+
+            // =========================================================
+            // 7. FIND THE REPORT FRAME
+            // =========================================================
+            log.info(
+                'Looking for the frame containing the RCD report...'
+            );
+
+            const reportFrame =
+                await findReportFrame(
+                    page,
+                    log,
+                    60000
                 );
 
             log.info(
-                'Waiting for RCD report page to load...'
-            );
-
-            await storeInput.waitFor({
-                state: 'visible',
-                timeout: 60000,
-            });
-
-            log.info(
-                'RCD report page loaded successfully.'
-            );
-
-            log.info(
-                `Current URL: ${page.url()}`
-            );
-
-
-            await saveScreenshot(
-                page,
-                'HME_RCD_PAGE_LOADED'
+                `Using RCD report frame: ${reportFrame.url()}`
             );
 
 
             // =========================================================
-            // 7. SELECT STORE
+            // 8. FIND STORE INPUT
+            // =========================================================
+            let storeInput =
+                reportFrame.getByRole(
+                    'combobox',
+                    {
+                        name: 'Store:',
+                    }
+                );
+
+            if (
+                await storeInput.count() === 0
+            ) {
+                storeInput =
+                    reportFrame.locator(
+                        '#P_STORE_ID-input'
+                    );
+            }
+
+            await storeInput.waitFor({
+                state: 'visible',
+                timeout: 30000,
+            });
+
+            log.info(
+                'RCD Store selector is visible.'
+            );
+
+
+            // =========================================================
+            // 9. SELECT STORE
             // =========================================================
             log.info(
                 `Selecting store: ${store}`
             );
 
-            await selectCombobox(
-                page,
-                storeSelector,
-                store,
-                log
-            );
+            await storeInput.click();
 
-            log.info(
-                `Store selected: ${store}`
-            );
+            await storeInput.fill('');
+
+            await storeInput.fill(store);
+
+            await page.waitForTimeout(750);
+
+            const storeOption =
+                reportFrame
+                    .getByRole(
+                        'option',
+                        {
+                            name: store,
+                            exact: true,
+                        }
+                    )
+                    .last();
+
+            if (
+                await storeOption
+                    .isVisible()
+                    .catch(() => false)
+            ) {
+
+                await storeOption.click();
+
+                log.info(
+                    `Store selected: ${store}`
+                );
+
+            } else {
+
+                log.warning(
+                    'Exact Store option not found. Using Enter.'
+                );
+
+                await storeInput.press(
+                    'Enter'
+                );
+            }
 
 
             // =========================================================
-            // 8. ENTER REPORT DATE
+            // 10. ENTER REPORT DATE
             // =========================================================
             const dateInput =
-                page.locator(
+                reportFrame.locator(
                     'input[aria-label="Date (MM/DD/YYYY):"]'
                 );
 
@@ -366,46 +512,38 @@ const crawler = new PlaywrightCrawler({
                 report_date
             );
 
-            // You mentioned HME requires Enter here in order
-            // to activate/load the remaining fields.
             await dateInput.press(
                 'Enter'
             );
 
             log.info(
-                'Date entered. Waiting for time fields to become enabled...'
+                'Date entered. Waiting for time controls to become enabled...'
             );
 
 
             // =========================================================
-            // 9. WAIT FOR DATE-DEPENDENT CONTROLS
+            // 11. WAIT FOR START HOUR TO BECOME ENABLED
             // =========================================================
             await waitUntilEnabled(
-                page,
+                reportFrame,
                 '#P_HOUR_INI-input',
                 60000
             );
 
             log.info(
-                'Start-time fields are now enabled.'
+                'Start time fields are now enabled.'
             );
 
-            // Give HME a little extra time to finish populating
-            // all dependent controls.
             await page.waitForTimeout(
-                1500
+                1000
             );
 
 
             // =========================================================
-            // 10. START HOUR
+            // 12. START HOUR
             // =========================================================
-            log.info(
-                `Selecting start hour: ${start_hour}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_HOUR_INI-input',
                 start_hour,
                 log
@@ -413,14 +551,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 11. START MINUTE
+            // 13. START MINUTE
             // =========================================================
-            log.info(
-                `Selecting start minute: ${start_minute}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_MINUTE_INI-input',
                 start_minute,
                 log
@@ -428,14 +562,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 12. START AM / PM
+            // 14. START AM/PM
             // =========================================================
-            log.info(
-                `Selecting start AM/PM: ${start_ampm}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_AMPM_INI-input',
                 start_ampm,
                 log
@@ -443,14 +573,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 13. STOP HOUR
+            // 15. STOP HOUR
             // =========================================================
-            log.info(
-                `Selecting stop hour: ${stop_hour}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_HOUR_END-input',
                 stop_hour,
                 log
@@ -458,14 +584,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 14. STOP MINUTE
+            // 16. STOP MINUTE
             // =========================================================
-            log.info(
-                `Selecting stop minute: ${stop_minute}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_MINUTE_END-input',
                 stop_minute,
                 log
@@ -473,14 +595,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 15. STOP AM / PM
+            // 17. STOP AM/PM
             // =========================================================
-            log.info(
-                `Selecting stop AM/PM: ${stop_ampm}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_AMPM_END-input',
                 stop_ampm,
                 log
@@ -488,14 +606,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 16. TIME FORMAT
+            // 18. TIME FORMAT
             // =========================================================
-            log.info(
-                `Selecting time format: ${time_format}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_FORMAT_TIME-input',
                 time_format,
                 log
@@ -503,14 +617,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 17. INCLUDE PULLINS
+            // 19. INCLUDE PULLINS
             // =========================================================
-            log.info(
-                `Selecting Include Pullins: ${include_pullins}`
-            );
-
             await selectCombobox(
-                page,
+                reportFrame,
                 '#P_PULLINS-input',
                 include_pullins,
                 log
@@ -518,7 +628,7 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 18. SCREENSHOT BEFORE VIEW REPORT
+            // 20. SCREENSHOT BEFORE VIEW REPORT
             // =========================================================
             await saveScreenshot(
                 page,
@@ -531,10 +641,10 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 19. CLICK VIEW REPORT
+            // 21. CLICK VIEW REPORT
             // =========================================================
             const viewReportButton =
-                page.getByText(
+                reportFrame.getByText(
                     'View report',
                     {
                         exact: true,
@@ -554,7 +664,7 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 20. WAIT FOR REPORT TO BEGIN LOADING
+            // 22. WAIT FOR REPORT RESPONSE
             // =========================================================
             await page.waitForTimeout(
                 5000
@@ -565,12 +675,12 @@ const crawler = new PlaywrightCrawler({
             );
 
             log.info(
-                `URL after View report: ${page.url()}`
+                `Current URL: ${page.url()}`
             );
 
 
             // =========================================================
-            // 21. SCREENSHOT AFTER VIEW REPORT
+            // 23. SCREENSHOT AFTER VIEW REPORT
             // =========================================================
             await saveScreenshot(
                 page,
@@ -583,7 +693,7 @@ const crawler = new PlaywrightCrawler({
 
 
             // =========================================================
-            // 22. SAVE RUN INFORMATION
+            // 24. SAVE RESULT
             // =========================================================
             await Actor.setValue(
                 'HME_RCD_RESULT',
@@ -591,6 +701,7 @@ const crawler = new PlaywrightCrawler({
                     success: true,
 
                     store,
+
                     report_date,
 
                     start_time:
@@ -600,7 +711,11 @@ const crawler = new PlaywrightCrawler({
                         `${stop_hour}:${stop_minute} ${stop_ampm}`,
 
                     time_format,
+
                     include_pullins,
+
+                    reportFrameUrl:
+                        reportFrame.url(),
 
                     finalUrl:
                         page.url(),
@@ -615,6 +730,7 @@ const crawler = new PlaywrightCrawler({
                 success: true,
 
                 store,
+
                 report_date,
 
                 start_time:
@@ -624,7 +740,11 @@ const crawler = new PlaywrightCrawler({
                     `${stop_hour}:${stop_minute} ${stop_ampm}`,
 
                 time_format,
+
                 include_pullins,
+
+                reportFrameUrl:
+                    reportFrame.url(),
 
                 finalUrl:
                     page.url(),
@@ -640,9 +760,6 @@ const crawler = new PlaywrightCrawler({
 
         } catch (error) {
 
-            // =========================================================
-            // FAILURE DEBUGGING
-            // =========================================================
             log.error(
                 `HME RCD Actor failed: ${error.message}`
             );
@@ -668,19 +785,32 @@ const crawler = new PlaywrightCrawler({
             }
 
 
-            await Actor.setValue(
-                'HME_RCD_FAILURE_DETAILS',
-                {
-                    error:
-                        error.message,
+            try {
+                await Actor.setValue(
+                    'HME_RCD_FAILURE_DETAILS',
+                    {
+                        error:
+                            error.message,
 
-                    url:
-                        page.url(),
+                        url:
+                            page.url(),
 
-                    timestamp:
-                        new Date().toISOString(),
-                }
-            );
+                        frames:
+                            page.frames().map(
+                                (frame, index) => ({
+                                    index,
+                                    url:
+                                        frame.url(),
+                                })
+                            ),
+
+                        timestamp:
+                            new Date().toISOString(),
+                    }
+                );
+            } catch {
+                // Ignore if page has already been closed
+            }
 
             throw error;
         }
