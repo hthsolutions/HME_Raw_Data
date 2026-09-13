@@ -811,62 +811,144 @@ function validateHmeQueueFields(
 }
 
 function normalizeDepartureTime(value) {
+
     const input =
-        String(value ?? '').trim();
+        String(value ?? '')
+            .trim();
 
     if (!input) {
         return null;
     }
 
-    const match =
+
+    // ============================================================
+    // Format 1:
+    // 09/11/2026 10:40:15 AM
+    // ============================================================
+
+    let match =
         input.match(
             /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i
         );
 
-    if (!match) {
-        throw new Error(
-            `Unexpected Departure_Time format: "${input}"`
+    if (match) {
+
+        const [
+            ,
+            month,
+            day,
+            year,
+            hour,
+            minute,
+            second,
+            ampm
+        ] = match;
+
+        let hour24 =
+            Number(hour);
+
+        const period =
+            ampm.toUpperCase();
+
+        if (
+            period === 'PM' &&
+            hour24 !== 12
+        ) {
+            hour24 += 12;
+        }
+
+        if (
+            period === 'AM' &&
+            hour24 === 12
+        ) {
+            hour24 = 0;
+        }
+
+        return (
+            `${year}-` +
+            `${String(month).padStart(2, '0')}-` +
+            `${String(day).padStart(2, '0')} ` +
+            `${String(hour24).padStart(2, '0')}:` +
+            `${minute}:` +
+            `${second}`
         );
     }
 
-    let [
-        ,
-        month,
-        day,
-        year,
-        hour,
-        minute,
-        second,
-        ampm
-    ] = match;
 
-    let hour24 =
-        Number(hour);
+    // ============================================================
+    // Format 2:
+    // 2026-09-11 10:40:15 AM
+    //
+    // THIS IS THE FORMAT YOUR HME CSV IS ACTUALLY RETURNING
+    // ============================================================
 
-    const upperAmPm =
-        ampm.toUpperCase();
+    match =
+        input.match(
+            /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i
+        );
 
-    if (
-        upperAmPm === 'PM' &&
-        hour24 !== 12
-    ) {
-        hour24 += 12;
+    if (match) {
+
+        const [
+            ,
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            ampm
+        ] = match;
+
+        let hour24 =
+            Number(hour);
+
+        const period =
+            ampm.toUpperCase();
+
+        if (
+            period === 'PM' &&
+            hour24 !== 12
+        ) {
+            hour24 += 12;
+        }
+
+        if (
+            period === 'AM' &&
+            hour24 === 12
+        ) {
+            hour24 = 0;
+        }
+
+        return (
+            `${year}-` +
+            `${String(month).padStart(2, '0')}-` +
+            `${String(day).padStart(2, '0')} ` +
+            `${String(hour24).padStart(2, '0')}:` +
+            `${minute}:` +
+            `${second}`
+        );
     }
 
-    if (
-        upperAmPm === 'AM' &&
-        hour24 === 12
-    ) {
-        hour24 = 0;
+
+    // ============================================================
+    // Format 3:
+    // Already PostgreSQL-friendly:
+    // 2026-09-11 22:40:15
+    // ============================================================
+
+    match =
+        input.match(
+            /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/
+        );
+
+    if (match) {
+        return input;
     }
 
-    return (
-        `${year}-` +
-        `${String(month).padStart(2, '0')}-` +
-        `${String(day).padStart(2, '0')} ` +
-        `${String(hour24).padStart(2, '0')}:` +
-        `${minute}:` +
-        `${second}`
+
+    throw new Error(
+        `Unexpected Departure_Time format: "${input}"`
     );
 }
 
