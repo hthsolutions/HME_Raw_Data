@@ -14,6 +14,8 @@ const {
 
     store = '(Ungrouped) 11312 Leander - Other',
 
+    store_key_values = [],
+
     report_date,
 
     start_hour = '10',
@@ -281,6 +283,31 @@ async function findReportFrame(
     throw new Error(
         'Could not locate the RCD Store combobox in any page frame.'
     );
+}
+
+function getStoreKey(storeValue, storeKeyValues) {
+    const storeUpper =
+        String(storeValue)
+            .toUpperCase();
+
+    const match =
+        storeKeyValues.find(
+            value =>
+                storeUpper.includes(
+                    String(value).toUpperCase()
+                )
+        );
+
+    if (!match) {
+        throw new Error(
+            `No store key match found for "${storeValue}". ` +
+            `Configured values: ${storeKeyValues.join(', ')}`
+        );
+    }
+
+    return String(match)
+        .toUpperCase()
+        .trim();
 }
 
 
@@ -1044,16 +1071,22 @@ const crawler =
                         '-'
                     );
 
-                const safeStore =
-                    sanitizeFileName(
-                        store
+                    const storeKey =
+                    getStoreKey(
+                        store,
+                        store_key_values
                     );
-
+                
+                const safeStoreKey =
+                    sanitizeFileName(
+                        storeKey
+                    );
+                
                 const fileName =
-                    `${safeStore} - ${safeDate}.csv`;
-
+                    `${safeStoreKey} - ${safeDate}.csv`;
+                
                 const recordKey =
-                    `${safeStore} - ${safeDate}`;
+                    `${safeStoreKey} - ${safeDate}`;
 
                 log.info(
                     `Final CSV filename: ${fileName}`

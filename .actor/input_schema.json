@@ -123,6 +123,18 @@
                 "No",
                 "Yes"
             ]
+        },
+        "store_key_values": {
+            "title": "Store Key Values",
+            "type": "array",
+            "description": "List of values used to derive the storage key from the HME Store name. Matching is case-insensitive.",
+            "editor": "stringList",
+            "default": [
+                "LEANDER"
+            ],
+            "items": {
+                "type": "string"
+            }
         }
     },
     "required": [
