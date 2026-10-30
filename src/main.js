@@ -2,6 +2,8 @@ import { Actor } from 'apify';
 import { PlaywrightCrawler } from 'crawlee';
 import fs from 'node:fs/promises';
 
+const CENTRAL_TIME_ZONE = 'America/Chicago';
+
 await Actor.init();
 
 const SUPABASE_URL =
@@ -382,9 +384,6 @@ function getStoreKey(
 
     return matches[0];
 }
-
-
-const CENTRAL_TIME_ZONE = 'America/Chicago';
 
 
 function parseOverrideFlag(value) {
