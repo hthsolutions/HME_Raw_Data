@@ -24,19 +24,46 @@
             "editor": "textfield",
             "isSecret": true
         },
+        "stores": {
+            "title": "Stores",
+            "type": "array",
+            "description": "HME Cloud stores to export in this run, one per line. Each store is downloaded after a single login. Leave this empty to use the single Store field.",
+            "editor": "stringList",
+            "default": [
+                "(Ungrouped) 11312 Leander - Other",
+                "(Ungrouped) 2791 Marble Falls - Other",
+                "(Ungrouped) 404 Lampasas - Other",
+                "(Ungrouped) 62 Temple - Other"
+            ],
+            "items": {
+                "type": "string"
+            }
+        },
         "store": {
             "title": "Store",
             "type": "string",
-            "description": "HME Cloud store to select.",
+            "description": "Single HME Cloud store. Used only when Stores is empty.",
             "editor": "textfield",
             "default": "(Ungrouped) 11312 Leander - Other"
+        },
+        "override_flag": {
+            "title": "Override date",
+            "type": "boolean",
+            "description": "When enabled, the Actor uses Override report date. When disabled, it reports on yesterday in US Central Time.",
+            "editor": "checkbox",
+            "default": false
+        },
+        "override_date": {
+            "title": "Override report date",
+            "type": "string",
+            "description": "Report date in MM/DD/YYYY format. Used only when Override date is enabled.",
+            "editor": "textfield"
         },
         "report_date": {
             "title": "Report Date",
             "type": "string",
-            "description": "Report date in MM/DD/YYYY format.",
-            "editor": "textfield",
-            "default": "09/10/2026"
+            "description": "Legacy report date in MM/DD/YYYY format. Used only when Override date is enabled and Override report date is empty.",
+            "editor": "textfield"
         },
         "start_hour": {
             "title": "Start Hour",
@@ -130,7 +157,10 @@
             "description": "List of values used to derive the storage key from the HME Store name. Matching is case-insensitive.",
             "editor": "stringList",
             "default": [
-                "LEANDER"
+                "LEANDER",
+                "MARBLE FALLS",
+                "LAMPASAS",
+                "TEMPLE"
             ],
             "items": {
                 "type": "string"
@@ -140,8 +170,6 @@
     "required": [
         "username",
         "password",
-        "store",
-        "report_date",
         "start_hour",
         "start_minute",
         "start_ampm",

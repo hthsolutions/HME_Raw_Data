@@ -20,7 +20,7 @@ if (
 }
 
 
-const input = await Actor.getInput();
+const input = (await Actor.getInput()) ?? {};
 
 const {
     url = 'https://hmecloud.com/new-reports/rcd',
@@ -28,11 +28,17 @@ const {
     username,
     password,
 
-    store = '(Ungrouped) 11312 Leander - Other',
+    stores,
+
+    store: storeInput = '(Ungrouped) 11312 Leander - Other',
 
     store_key_values = [],
 
-    report_date,
+    override_flag: overrideFlagInput = false,
+
+    override_date: overrideDateInput,
+
+    report_date: legacyReportDate,
 
     start_hour = '10',
     start_minute = '30',
@@ -57,18 +63,34 @@ if (!username || !password) {
     );
 }
 
-if (!report_date) {
-    throw new Error(
-        'report_date is required. Example: 09/10/2026'
-    );
-}
-
 if (
     !Array.isArray(store_key_values) ||
     store_key_values.length === 0
 ) {
     throw new Error(
         'store_key_values must contain at least one configured store value.'
+    );
+}
+
+const overrideFlag = parseOverrideFlag(
+    overrideFlagInput
+);
+
+const storeList = normalizeStoreList(
+    stores,
+    storeInput
+);
+
+const report_date = resolveReportDate({
+    overrideFlag,
+    overrideDate: overrideDateInput,
+    legacyReportDate,
+});
+
+for (const storeName of storeList) {
+    getStoreKey(
+        storeName,
+        store_key_values
     );
 }
 
@@ -323,24 +345,313 @@ function getStoreKey(
         String(storeValue)
             .toUpperCase();
 
-    const match =
-        storeKeyValues.find(
-            value =>
-                storeUpper.includes(
-                    String(value).toUpperCase()
-                )
-        );
+    const knownStoreKeys = [
+        'MARBLE FALLS',
+        'LAMPASAS',
+        'LEANDER',
+        'TEMPLE',
+    ];
 
-    if (!match) {
+    const matches =
+        [
+            ...storeKeyValues,
+            ...knownStoreKeys,
+        ]
+            .map(
+                value =>
+                    String(value)
+                        .toUpperCase()
+                        .trim()
+            )
+            .filter(
+                value =>
+                    value &&
+                    storeUpper.includes(
+                        value
+                    )
+            )
+            .sort(
+                (left, right) =>
+                    right.length - left.length
+            );
+
+    if (matches.length === 0) {
         throw new Error(
             `No store key match found for "${storeValue}". ` +
             `Configured values: ${storeKeyValues.join(', ')}`
         );
     }
 
-    return String(match)
-        .toUpperCase()
-        .trim();
+    return matches[0];
+}
+
+
+const CENTRAL_TIME_ZONE = 'America/Chicago';
+
+
+function parseOverrideFlag(value) {
+    if (
+        typeof value === 'boolean'
+    ) {
+        return value;
+    }
+
+    if (
+        value === undefined ||
+        value === null ||
+        value === ''
+    ) {
+        return false;
+    }
+
+    const normalized =
+        String(value)
+            .trim()
+            .toLowerCase();
+
+    if (
+        ['1', 'true', 'yes', 'on'].includes(
+            normalized
+        )
+    ) {
+        return true;
+    }
+
+    if (
+        ['0', 'false', 'no', 'off'].includes(
+            normalized
+        )
+    ) {
+        return false;
+    }
+
+    throw new Error(
+        'override_flag must be true or false. ' +
+        `Received: ${value}`
+    );
+}
+
+
+function validateReportDate(value) {
+    const datePattern =
+        /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/\d{4}$/;
+
+    if (
+        !datePattern.test(
+            value
+        )
+    ) {
+        throw new Error(
+            'Report date must use MM/DD/YYYY format. ' +
+            `Received: ${value}`
+        );
+    }
+}
+
+
+function formatDateParts({
+    year,
+    month,
+    day,
+}) {
+    return (
+        `${String(month).padStart(2, '0')}/` +
+        `${String(day).padStart(2, '0')}/` +
+        `${year}`
+    );
+}
+
+
+function getCentralDateParts(date) {
+    const parts =
+        new Intl.DateTimeFormat(
+            'en-US',
+            {
+                timeZone:
+                    CENTRAL_TIME_ZONE,
+
+                year:
+                    'numeric',
+
+                month:
+                    '2-digit',
+
+                day:
+                    '2-digit',
+            }
+        ).formatToParts(
+            date
+        );
+
+    const lookup =
+        Object.fromEntries(
+            parts
+                .filter(
+                    part =>
+                        part.type !== 'literal'
+                )
+                .map(
+                    part => [
+                        part.type,
+                        Number(
+                            part.value
+                        ),
+                    ]
+                )
+        );
+
+    return {
+        year:
+            lookup.year,
+
+        month:
+            lookup.month,
+
+        day:
+            lookup.day,
+    };
+}
+
+
+function calculateReportDate(
+    today = new Date()
+) {
+    const {
+        year,
+        month,
+        day,
+    } = getCentralDateParts(
+        today
+    );
+
+    const calendarDate =
+        new Date(
+            Date.UTC(
+                year,
+                month - 1,
+                day
+            )
+        );
+
+    calendarDate.setUTCDate(
+        calendarDate.getUTCDate() - 1
+    );
+
+    return formatDateParts({
+        year:
+            calendarDate.getUTCFullYear(),
+
+        month:
+            calendarDate.getUTCMonth() + 1,
+
+        day:
+            calendarDate.getUTCDate(),
+    });
+}
+
+
+function resolveReportDate({
+    overrideFlag,
+    overrideDate,
+    legacyReportDate,
+}) {
+    if (
+        !overrideFlag
+    ) {
+        return calculateReportDate();
+    }
+
+    const requested =
+        String(
+            overrideDate ||
+            legacyReportDate ||
+            ''
+        ).trim();
+
+    if (
+        !requested
+    ) {
+        throw new Error(
+            'override_date is required when override_flag is true. ' +
+            'Example: 09/10/2026'
+        );
+    }
+
+    validateReportDate(
+        requested
+    );
+
+    const [
+        month,
+        day,
+        year,
+    ] = requested
+        .split('/')
+        .map(Number);
+
+    return formatDateParts({
+        year,
+        month,
+        day,
+    });
+}
+
+
+function normalizeStoreList(
+    storesInput,
+    singleStoreInput
+) {
+    const fromList =
+        Array.isArray(
+            storesInput
+        )
+            ? storesInput
+                .map(
+                    value =>
+                        String(value).trim()
+                )
+                .filter(Boolean)
+            : [];
+
+    if (
+        fromList.length > 0
+    ) {
+        return fromList;
+    }
+
+    if (
+        Array.isArray(
+            singleStoreInput
+        )
+    ) {
+        const fromStoreArray =
+            singleStoreInput
+                .map(
+                    value =>
+                        String(value).trim()
+                )
+                .filter(Boolean);
+
+        if (
+            fromStoreArray.length > 0
+        ) {
+            return fromStoreArray;
+        }
+    }
+
+    if (
+        typeof singleStoreInput === 'string' &&
+        singleStoreInput.trim()
+    ) {
+        return [
+            singleStoreInput.trim(),
+        ];
+    }
+
+    throw new Error(
+        'At least one store is required. ' +
+        'Add HME store names to stores, or set store.'
+    );
 }
 
 
@@ -1418,7 +1729,7 @@ const crawler =
         maxRequestRetries: 0,
 
         requestHandlerTimeoutSecs:
-            300,
+            180 + (storeList.length * 240),
 
         launchContext: {
             launchOptions: {
@@ -1433,9 +1744,29 @@ const crawler =
             log,
         }) {
 
-            log.info(
-                `Opening HME Cloud RCD page: ${request.url}`
-            );
+                log.info(
+                    `Opening HME Cloud RCD page: ${request.url}`
+                );
+
+                log.info(
+                    `Report date ${report_date} ` +
+                    `(override_flag=${overrideFlag}). ` +
+                    `Stores (${storeList.length}): ${storeList.join(' | ')}`
+                );
+
+                if (
+                    !overrideFlag &&
+                    (
+                        overrideDateInput ||
+                        legacyReportDate
+                    )
+                ) {
+                    log.info(
+                        'override_flag is false, so the supplied ' +
+                        'report date is ignored. Using yesterday in ' +
+                        'US Central Time.'
+                    );
+                }
 
             try {
 
@@ -1597,7 +1928,7 @@ const crawler =
                     'Looking for the frame containing the RCD report...'
                 );
 
-                const reportFrame =
+                let reportFrame =
                     await findReportFrame(
                         page,
                         log,
@@ -1607,6 +1938,51 @@ const crawler =
                 log.info(
                     `Using RCD report frame: ${reportFrame.url()}`
                 );
+
+                const storeResults = [];
+                const storeFailures = [];
+
+                for (
+                    let storeIndex = 0;
+                    storeIndex < storeList.length;
+                    storeIndex++
+                ) {
+                    const store =
+                        storeList[storeIndex];
+
+                    log.info(
+                        `Starting store ${storeIndex + 1} ` +
+                        `of ${storeList.length}: ${store}`
+                    );
+
+                    try {
+
+                        if (
+                            storeIndex > 0
+                        ) {
+                            log.info(
+                                'Reloading the RCD report before the next store.'
+                            );
+
+                            await page.reload({
+                                waitUntil:
+                                    'domcontentloaded',
+
+                                timeout:
+                                    60000,
+                            });
+
+                            reportFrame =
+                                await findReportFrame(
+                                    page,
+                                    log,
+                                    60000
+                                );
+
+                            log.info(
+                                `Using RCD report frame: ${reportFrame.url()}`
+                            );
+                        }
 
 
                 // =====================================================
@@ -1697,13 +2073,51 @@ const crawler =
 
                 } else {
 
-                    log.warning(
-                        'Exact Store option not found. Using Enter.'
-                    );
+                    const storeKeyHint =
+                        getStoreKey(
+                            store,
+                            store_key_values
+                        );
 
-                    await storeInput.press(
-                        'Enter'
-                    );
+                    const partialOption =
+                        reportFrame
+                            .getByRole(
+                                'option',
+                                {
+                                    name:
+                                        new RegExp(
+                                            storeKeyHint.replace(
+                                                /[.*+?^${}()|[\]\\]/g,
+                                                '\\$&'
+                                            ),
+                                            'i'
+                                        ),
+                                }
+                            )
+                            .last();
+
+                    if (
+                        await partialOption
+                            .isVisible()
+                            .catch(
+                                () => false
+                            )
+                    ) {
+                        await partialOption.click();
+
+                        log.info(
+                            `Store selected by key "${storeKeyHint}".`
+                        );
+                    } else {
+
+                        log.warning(
+                            'Exact Store option not found. Using Enter.'
+                        );
+
+                        await storeInput.press(
+                            'Enter'
+                        );
+                    }
                 }
 
 
@@ -1864,11 +2278,11 @@ const crawler =
 
                 await saveScreenshot(
                     page,
-                    'HME_RCD_PARAMETERS_COMPLETE'
+                    `HME_RCD_PARAMETERS_${storeIndex + 1}`
                 );
 
                 log.info(
-                    'Saved screenshot: HME_RCD_PARAMETERS_COMPLETE'
+                    `Saved screenshot: HME_RCD_PARAMETERS_${storeIndex + 1}`
                 );
 
 
@@ -2023,11 +2437,11 @@ const crawler =
 
                 await saveScreenshot(
                     page,
-                    'HME_RCD_REPORT_LOADED'
+                    `HME_RCD_REPORT_LOADED_${storeIndex + 1}`
                 );
 
                 log.info(
-                    'Saved screenshot: HME_RCD_REPORT_LOADED'
+                    `Saved screenshot: HME_RCD_REPORT_LOADED_${storeIndex + 1}`
                 );
 
 
@@ -2341,49 +2755,49 @@ const crawler =
                 // 39. SAVE RESULT METADATA
                 // =====================================================
 
-                await Actor.setValue(
-                    'HME_RCD_RESULT',
-                    {
-                        success:
-                            true,
+                storeResults.push({
+                    success:
+                        true,
 
-                        store,
+                    store,
 
-                        storeLocation:
-                            storeKey,
+                    storeLocation:
+                        storeKey,
 
-                        report_date,
+                    report_date,
 
-                        start_time:
-                            `${start_hour}:${start_minute} ${start_ampm}`,
+                    override_flag:
+                        overrideFlag,
 
-                        stop_time:
-                            `${stop_hour}:${stop_minute} ${stop_ampm}`,
+                    start_time:
+                        `${start_hour}:${start_minute} ${start_ampm}`,
 
-                        time_format,
+                    stop_time:
+                        `${stop_hour}:${stop_minute} ${stop_ampm}`,
 
-                        include_pullins,
+                    time_format,
 
-                        storage:
-                            'hthsolutions-hme-rcd',
+                    include_pullins,
 
-                        recordKey,
+                    storage:
+                        'hthsolutions-hme-rcd',
 
-                        fileName,
+                    recordKey,
 
-                        originalFileName:
-                            download.suggestedFilename(),
+                    fileName,
 
-                        reportFrameUrl:
-                            reportFrame.url(),
+                    originalFileName:
+                        download.suggestedFilename(),
 
-                        finalUrl:
-                            page.url(),
+                    reportFrameUrl:
+                        reportFrame.url(),
 
-                        timestamp:
-                            new Date().toISOString(),
-                    }
-                );
+                    finalUrl:
+                        page.url(),
+
+                    timestamp:
+                        new Date().toISOString(),
+                });
 
 
                 // =====================================================
@@ -2400,6 +2814,9 @@ const crawler =
                         storeKey,
 
                     report_date,
+
+                    override_flag:
+                        overrideFlag,
 
                     start_time:
                         `${start_hour}:${start_minute} ${start_ampm}`,
@@ -2419,8 +2836,80 @@ const crawler =
                 });
 
                 log.info(
-                    'HME RCD CSV export completed successfully.'
+                    `HME RCD CSV export completed for ${store}.`
                 );
+
+                    } catch (storeError) {
+
+                        log.error(
+                            `HME RCD failed for "${store}": ${storeError.message}`
+                        );
+
+                        storeFailures.push({
+                            store,
+
+                            error:
+                                storeError.message,
+                        });
+
+                        try {
+
+                            await saveScreenshot(
+                                page,
+                                `HME_RCD_FAILURE_${storeIndex + 1}`
+                            );
+
+                        } catch (
+                            screenshotError
+                        ) {
+
+                            log.error(
+                                'Could not save store failure screenshot: ' +
+                                screenshotError.message
+                            );
+                        }
+                    }
+                }
+
+                await Actor.setValue(
+                    'HME_RCD_RESULT',
+                    {
+                        success:
+                            storeFailures.length === 0,
+
+                        override_flag:
+                            overrideFlag,
+
+                        report_date,
+
+                        stores:
+                            storeList,
+
+                        results:
+                            storeResults,
+
+                        failures:
+                            storeFailures,
+
+                        timestamp:
+                            new Date().toISOString(),
+                    }
+                );
+
+                if (
+                    storeFailures.length > 0
+                ) {
+                    throw new Error(
+                        `${storeFailures.length} of ${storeList.length} ` +
+                        'store(s) failed: ' +
+                        storeFailures
+                            .map(
+                                failure =>
+                                    `${failure.store}: ${failure.error}`
+                            )
+                            .join(' | ')
+                    );
+                }
 
             } catch (error) {
 
