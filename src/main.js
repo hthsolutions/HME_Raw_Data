@@ -76,9 +76,9 @@ const overrideFlag = parseOverrideFlag(
     overrideFlagInput
 );
 
-const storeList = normalizeStoreList(
-    stores,
-    storeInput
+const store = resolveSingleStore(
+    storeInput,
+    stores
 );
 
 const report_date = resolveReportDate({
@@ -87,12 +87,10 @@ const report_date = resolveReportDate({
     legacyReportDate,
 });
 
-for (const storeName of storeList) {
-    getStoreKey(
-        storeName,
-        store_key_values
-    );
-}
+getStoreKey(
+    store,
+    store_key_values
+);
 
 
 // =====================================================================
@@ -597,15 +595,15 @@ function resolveReportDate({
 }
 
 
-function normalizeStoreList(
-    storesInput,
-    singleStoreInput
+function resolveSingleStore(
+    storeValue,
+    storesValue
 ) {
-    const fromList =
+    const listedStores =
         Array.isArray(
-            storesInput
+            storesValue
         )
-            ? storesInput
+            ? storesValue
                 .map(
                     value =>
                         String(value).trim()
@@ -614,43 +612,55 @@ function normalizeStoreList(
             : [];
 
     if (
-        fromList.length > 0
-    ) {
-        return fromList;
-    }
-
-    if (
-        Array.isArray(
-            singleStoreInput
-        )
-    ) {
-        const fromStoreArray =
-            singleStoreInput
+        listedStores.length > 1 ||
+        (
+            Array.isArray(storeValue) &&
+            storeValue
                 .map(
                     value =>
                         String(value).trim()
                 )
-                .filter(Boolean);
+                .filter(Boolean)
+                .length > 1
+        )
+    ) {
+        throw new Error(
+            'This actor accepts one location. ' +
+            'Set store to a single HME store.'
+        );
+    }
 
-        if (
-            fromStoreArray.length > 0
-        ) {
-            return fromStoreArray;
+    if (
+        typeof storeValue === 'string' &&
+        storeValue.trim()
+    ) {
+        return storeValue.trim();
+    }
+
+    if (
+        Array.isArray(storeValue)
+    ) {
+        const singleStore =
+            storeValue
+                .map(
+                    value =>
+                        String(value).trim()
+                )
+                .find(Boolean);
+
+        if (singleStore) {
+            return singleStore;
         }
     }
 
     if (
-        typeof singleStoreInput === 'string' &&
-        singleStoreInput.trim()
+        listedStores.length === 1
     ) {
-        return [
-            singleStoreInput.trim(),
-        ];
+        return listedStores[0];
     }
 
     throw new Error(
-        'At least one store is required. ' +
-        'Add HME store names to stores, or set store.'
+        'store is required.'
     );
 }
 
@@ -1729,7 +1739,7 @@ const crawler =
         maxRequestRetries: 0,
 
         requestHandlerTimeoutSecs:
-            180 + (storeList.length * 240),
+            300,
 
         launchContext: {
             launchOptions: {
@@ -1751,7 +1761,7 @@ const crawler =
                 log.info(
                     `Report date ${report_date} ` +
                     `(override_flag=${overrideFlag}). ` +
-                    `Stores (${storeList.length}): ${storeList.join(' | ')}`
+                    `Store: ${store}`
                 );
 
                 if (
@@ -1928,7 +1938,7 @@ const crawler =
                     'Looking for the frame containing the RCD report...'
                 );
 
-                let reportFrame =
+                const reportFrame =
                     await findReportFrame(
                         page,
                         log,
@@ -1938,51 +1948,6 @@ const crawler =
                 log.info(
                     `Using RCD report frame: ${reportFrame.url()}`
                 );
-
-                const storeResults = [];
-                const storeFailures = [];
-
-                for (
-                    let storeIndex = 0;
-                    storeIndex < storeList.length;
-                    storeIndex++
-                ) {
-                    const store =
-                        storeList[storeIndex];
-
-                    log.info(
-                        `Starting store ${storeIndex + 1} ` +
-                        `of ${storeList.length}: ${store}`
-                    );
-
-                    try {
-
-                        if (
-                            storeIndex > 0
-                        ) {
-                            log.info(
-                                'Reloading the RCD report before the next store.'
-                            );
-
-                            await page.reload({
-                                waitUntil:
-                                    'domcontentloaded',
-
-                                timeout:
-                                    60000,
-                            });
-
-                            reportFrame =
-                                await findReportFrame(
-                                    page,
-                                    log,
-                                    60000
-                                );
-
-                            log.info(
-                                `Using RCD report frame: ${reportFrame.url()}`
-                            );
-                        }
 
 
                 // =====================================================
@@ -2278,11 +2243,11 @@ const crawler =
 
                 await saveScreenshot(
                     page,
-                    `HME_RCD_PARAMETERS_${storeIndex + 1}`
+                    'HME_RCD_PARAMETERS_COMPLETE'
                 );
 
                 log.info(
-                    `Saved screenshot: HME_RCD_PARAMETERS_${storeIndex + 1}`
+                    'Saved screenshot: HME_RCD_PARAMETERS_COMPLETE'
                 );
 
 
@@ -2437,11 +2402,11 @@ const crawler =
 
                 await saveScreenshot(
                     page,
-                    `HME_RCD_REPORT_LOADED_${storeIndex + 1}`
+                    'HME_RCD_REPORT_LOADED'
                 );
 
                 log.info(
-                    `Saved screenshot: HME_RCD_REPORT_LOADED_${storeIndex + 1}`
+                    'Saved screenshot: HME_RCD_REPORT_LOADED'
                 );
 
 
@@ -2755,49 +2720,52 @@ const crawler =
                 // 39. SAVE RESULT METADATA
                 // =====================================================
 
-                storeResults.push({
-                    success:
-                        true,
+                await Actor.setValue(
+                    'HME_RCD_RESULT',
+                    {
+                        success:
+                            true,
 
-                    store,
+                        store,
 
-                    storeLocation:
-                        storeKey,
+                        storeLocation:
+                            storeKey,
 
-                    report_date,
+                        report_date,
 
-                    override_flag:
-                        overrideFlag,
+                        override_flag:
+                            overrideFlag,
 
-                    start_time:
-                        `${start_hour}:${start_minute} ${start_ampm}`,
+                        start_time:
+                            `${start_hour}:${start_minute} ${start_ampm}`,
 
-                    stop_time:
-                        `${stop_hour}:${stop_minute} ${stop_ampm}`,
+                        stop_time:
+                            `${stop_hour}:${stop_minute} ${stop_ampm}`,
 
-                    time_format,
+                        time_format,
 
-                    include_pullins,
+                        include_pullins,
 
-                    storage:
-                        'hthsolutions-hme-rcd',
+                        storage:
+                            'hthsolutions-hme-rcd',
 
-                    recordKey,
+                        recordKey,
 
-                    fileName,
+                        fileName,
 
-                    originalFileName:
-                        download.suggestedFilename(),
+                        originalFileName:
+                            download.suggestedFilename(),
 
-                    reportFrameUrl:
-                        reportFrame.url(),
+                        reportFrameUrl:
+                            reportFrame.url(),
 
-                    finalUrl:
-                        page.url(),
+                        finalUrl:
+                            page.url(),
 
-                    timestamp:
-                        new Date().toISOString(),
-                });
+                        timestamp:
+                            new Date().toISOString(),
+                    }
+                );
 
 
                 // =====================================================
@@ -2836,80 +2804,8 @@ const crawler =
                 });
 
                 log.info(
-                    `HME RCD CSV export completed for ${store}.`
+                    'HME RCD CSV export completed successfully.'
                 );
-
-                    } catch (storeError) {
-
-                        log.error(
-                            `HME RCD failed for "${store}": ${storeError.message}`
-                        );
-
-                        storeFailures.push({
-                            store,
-
-                            error:
-                                storeError.message,
-                        });
-
-                        try {
-
-                            await saveScreenshot(
-                                page,
-                                `HME_RCD_FAILURE_${storeIndex + 1}`
-                            );
-
-                        } catch (
-                            screenshotError
-                        ) {
-
-                            log.error(
-                                'Could not save store failure screenshot: ' +
-                                screenshotError.message
-                            );
-                        }
-                    }
-                }
-
-                await Actor.setValue(
-                    'HME_RCD_RESULT',
-                    {
-                        success:
-                            storeFailures.length === 0,
-
-                        override_flag:
-                            overrideFlag,
-
-                        report_date,
-
-                        stores:
-                            storeList,
-
-                        results:
-                            storeResults,
-
-                        failures:
-                            storeFailures,
-
-                        timestamp:
-                            new Date().toISOString(),
-                    }
-                );
-
-                if (
-                    storeFailures.length > 0
-                ) {
-                    throw new Error(
-                        `${storeFailures.length} of ${storeList.length} ` +
-                        'store(s) failed: ' +
-                        storeFailures
-                            .map(
-                                failure =>
-                                    `${failure.store}: ${failure.error}`
-                            )
-                            .join(' | ')
-                    );
-                }
 
             } catch (error) {
 

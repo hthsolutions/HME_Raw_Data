@@ -2,7 +2,7 @@
     "actorSpecification": 1,
     "name": "hme-raw-data",
     "title": "HME Raw Data",
-    "description": "Exports the HME Raw Car Data report for one or more stores. Uses yesterday in US Central Time unless an override date is set.",
+    "description": "Exports the HME Raw Car Data report for one store. Uses yesterday in US Central Time unless an override date is set.",
     "version": "0.1",
     "buildTag": "latest",
     "dockerfile": "../Dockerfile",

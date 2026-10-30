@@ -24,25 +24,10 @@
             "editor": "textfield",
             "isSecret": true
         },
-        "stores": {
-            "title": "Stores",
-            "type": "array",
-            "description": "HME Cloud stores to export in this run, one per line. Each store is downloaded after a single login. Leave this empty to use the single Store field.",
-            "editor": "stringList",
-            "default": [
-                "(Ungrouped) 11312 Leander - Other",
-                "(Ungrouped) 2791 Marble Falls - Other",
-                "(Ungrouped) 404 Lampasas - Other",
-                "(Ungrouped) 62 Temple - Other"
-            ],
-            "items": {
-                "type": "string"
-            }
-        },
         "store": {
             "title": "Store",
             "type": "string",
-            "description": "Single HME Cloud store. Used only when Stores is empty.",
+            "description": "One HME Cloud store to export in this run.",
             "editor": "textfield",
             "default": "(Ungrouped) 11312 Leander - Other"
         },
@@ -170,6 +155,7 @@
     "required": [
         "username",
         "password",
+        "store",
         "start_hour",
         "start_minute",
         "start_ampm",
