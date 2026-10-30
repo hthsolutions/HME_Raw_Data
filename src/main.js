@@ -121,8 +121,10 @@ async function saveScreenshot(page, key) {
 function sanitizeFileName(value) {
     return String(value)
         .replace(/[<>:"/\\|?*]/g, '-')
-        .replace(/\s+/g, ' ')
-        .trim();
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9!\-_.'()]/g, '-')
+        .replace(/_+/g, '_')
+        .replace(/^[_-]+|[_-]+$/g, '');
 }
 
 
